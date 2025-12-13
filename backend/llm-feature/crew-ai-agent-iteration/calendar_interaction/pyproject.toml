@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "calendar_interaction"
+version = "0.1.0"
+description = "calendar_interaction using crewAI"
+authors = ["Your Name <you@example.com>"]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<=3.13"
+crewai = { extras = ["tools"], version = "^0.63.0" }
+
+[tool.poetry.scripts]
+calendar_interaction = "calendar_interaction.main:run"
+run_crew = "calendar_interaction.main:run"
+train = "calendar_interaction.main:train"
+replay = "calendar_interaction.main:replay"
+test = "calendar_interaction.main:test"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

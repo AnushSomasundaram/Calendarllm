@@ -1,0 +1,12 @@
+{
+    "scripts": {
+        "dev": "vite",
+        "electron": "electron ./electron/main.js"
+    },
+    "dependencies": {
+        "better-sqlite3": "^12.5.0"
+    },
+    "devDependencies": {
+        "electron-rebuild": "^3.2.9"
+    }
+}

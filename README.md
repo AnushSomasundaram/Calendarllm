@@ -18,3 +18,6 @@ Simply type or speak your plans in natural language. The application understands
 
 
 <img width="1167" height="843" alt="Screenshot 2025-12-12 at 11 03 53 PM" src="https://github.com/user-attachments/assets/5cd164c4-d520-48f2-9997-f9008b7a51cb" />
+
+### 🖥️ Cross-Platform Native
+Enjoy a consistent and high-quality experience whether you are on a Mac (Intel or Apple Silicon), Windows PC, or Linux machine.

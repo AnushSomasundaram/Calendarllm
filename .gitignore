@@ -7,5 +7,9 @@ out/
 *.zip
 *.AppImage
 
+
 # Electron mac build products
 *.app/
+
+# Dependencies
+node_modules/

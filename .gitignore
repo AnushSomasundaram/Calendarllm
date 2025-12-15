@@ -1,0 +1,11 @@
+
+# build outputs
+dist/
+release/
+out/
+*.dmg
+*.zip
+*.AppImage
+
+# Electron mac build products
+*.app/

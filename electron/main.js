@@ -109,6 +109,7 @@
 
 // electron/main.js with crew ai
 // electron/main.js with crew ai
+
 const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const { spawn } = require("child_process");
@@ -144,11 +145,110 @@ function createWindow() {
         mainWindow.webContents.openDevTools({ mode: "detach" });
     } else {
         // Built frontend
-        mainWindow.loadFile(path.join(__dirname, "..", "dist", "index.html"));
+        mainWindow.loadFile(path.join(__dirname, "..", "dist_renderer", "index.html"));
     }
 
     mainWindow.on("closed", () => {
         mainWindow = null;
+    });
+}
+
+// Top-level variables for Python config
+let pythonExecutable;
+let scriptArgs = [];
+
+function determinePythonPath() {
+    if (app.isPackaged) {
+        // Production: bundled executable
+        const backendPath = path.join(process.resourcesPath, "backend");
+        const exePath = path.join(backendPath, "crewai_runner");
+
+        pythonExecutable = exePath;
+        scriptArgs = [];
+        console.log("PROD: Using bundled Python at:", pythonExecutable);
+    } else {
+        // Development: conda env
+        pythonExecutable = "/Users/software/anaconda3/envs/calendar-llm/bin/python";
+        scriptArgs = [
+            "/Users/software/development/calendar_llm/backend/llm-feature/crew-ai-agent-iteration/calendar_interaction/src/calendar_interaction/crewai_runner.py",
+        ];
+        console.log("DEV: Using local Python at:", pythonExecutable);
+    }
+}
+
+function startPythonBackend() {
+    if (pythonProc) {
+        console.log("Python backend already running.");
+        return;
+    }
+
+    determinePythonPath();
+
+    // Re-read DB path just in case
+    // Note: app.getPath might fail if called before app is ready, but this is called from whenReady or IPC
+    // Ideally we assume app is ready if this is called.
+    const userDataPath = app.getPath("userData");
+    const dbPath = path.join(userDataPath, "calendar_llm.db");
+
+    console.log("Starting Python backend...");
+    pythonProc = spawn(
+        pythonExecutable,
+        scriptArgs,
+        {
+            cwd: process.cwd(),
+            env: {
+                ...process.env,
+                CALENDAR_DB_PATH: dbPath,
+            },
+        }
+    );
+
+    pythonProc.stdout.on("data", (data) => {
+        const text = data.toString();
+        text.split(/\r?\n/).forEach((line) => {
+            line = line.trim();
+            if (!line) return;
+
+            if (!line.startsWith("{") || !line.endsWith("}")) {
+                console.log("[PYTHON NON-JSON]", line);
+                return;
+            }
+
+            let msg;
+            try {
+                msg = JSON.parse(line);
+            } catch (e) {
+                return;
+            }
+
+            if (msg.type === "log") {
+                const level = msg.level || "log";
+                const logFn = level === "error" ? console.error : console.log;
+                logFn("[PYTHON LOG]", msg.message);
+                return;
+            }
+
+            const { id, reply, error } = msg;
+            const pending = pendingLLMRequests.get(id);
+
+            if (!pending) return;
+
+            pendingLLMRequests.delete(id);
+            if (error) {
+                pending.reject(new Error(error));
+            } else {
+                pending.resolve(reply);
+            }
+        });
+    });
+
+    pythonProc.stderr.on("data", (data) => {
+        console.error("[PYTHON STDERR]", data.toString());
+    });
+
+    pythonProc.on("close", (code) => {
+        console.log("Python process exited with code:", code);
+        pythonProc = null;
     });
 }
 
@@ -168,79 +268,8 @@ app.whenReady().then(() => {
     const dbPath = path.join(userDataPath, "calendar_llm.db");
     console.log("LLM SQLite DB path for Python:", dbPath);
 
-    // Spawn the Python CrewAI runner
-    const PYTHON_PATH = "/Users/software/anaconda3/envs/calendar-llm/bin/python";
-
-    pythonProc = spawn(
-        PYTHON_PATH,
-        [
-            "/Users/software/development/calendar_llm/backend/llm-feature/crew-ai-agent-iteration/calendar_interaction/src/calendar_interaction/crewai_runner.py",
-        ],
-        {
-            cwd: process.cwd(),
-            env: {
-                ...process.env,
-                CALENDAR_DB_PATH: dbPath,
-            },
-        }
-    );
-
-    // ✅ FIXED: robust stdout handler that ignores pretty boxed logs
-    pythonProc.stdout.on("data", (data) => {
-        const text = data.toString();
-
-        // We may receive multiple lines; handle each separately
-        text.split(/\r?\n/).forEach((line) => {
-            line = line.trim();
-            if (!line) return;
-
-            // Ignore non-JSON lines (CrewAI pretty boxes, emojis, etc.)
-            if (!line.startsWith("{") || !line.endsWith("}")) {
-                console.log("[PYTHON NON-JSON]", line);
-                return;
-            }
-
-            let msg;
-            try {
-                msg = JSON.parse(line);
-            } catch (e) {
-                console.error("[PYTHON BAD JSON]", line);
-                return;
-            }
-
-            // Handle log messages from Python (type: "log")
-            if (msg.type === "log") {
-                const level = msg.level || "log";
-                const logFn = level === "error" ? console.error : console.log;
-                logFn("[PYTHON LOG]", msg.message);
-                return;
-            }
-
-            // Normal replies: { id, reply, error }
-            const { id, reply, error } = msg;
-            const pending = pendingLLMRequests.get(id);
-
-            if (!pending) {
-                console.warn("[PYTHON] Got response for unknown id:", id, msg);
-                return;
-            }
-
-            pendingLLMRequests.delete(id);
-            if (error) {
-                pending.reject(new Error(error));
-            } else {
-                pending.resolve(reply);
-            }
-        });
-    });
-
-    pythonProc.stderr.on("data", (data) => {
-        console.error("[PYTHON STDERR]", data.toString());
-    });
-
-    pythonProc.on("close", (code) => {
-        console.log("Python process exited with code:", code);
-    });
+    // Start it up calling the top-level function
+    startPythonBackend();
 
     createWindow();
 
@@ -313,6 +342,18 @@ ipcMain.handle("settings:get-openai-key", () => {
 
 ipcMain.handle("settings:set-openai-key", (event, key) => {
     db.setOpenAIKey(key);
+    console.log("API Key updated. Restarting Python backend...");
+
+    if (pythonProc) {
+        pythonProc.kill();
+        pythonProc = null;
+    }
+
+    // Give it a moment to die cleanly, then restart
+    setTimeout(() => {
+        startPythonBackend();
+    }, 500);
+
     return { ok: true };
 });
 

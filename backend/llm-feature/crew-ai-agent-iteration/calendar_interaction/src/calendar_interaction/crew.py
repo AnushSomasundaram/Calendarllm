@@ -1,3 +1,4 @@
+import os
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from calendar_interaction.tools.sqlite_tool import sqlite_tool  # module-level tool function
@@ -13,8 +14,19 @@ def default_llm():
 @CrewBase
 class CalendarInteractionCrew():
     """Calendar LLM crew for natural language → SQL → SQLite → response"""
-    agents_config = 'config/agents.yaml'
-    tasks_config  = 'config/tasks.yaml'
+    
+    # Resolve paths relative to this file to work in both Dev and PyInstaller
+    import sys
+    if getattr(sys, 'frozen', False):
+        # In PyInstaller bundle
+        # The --add-data "config:calendar_interaction/config" puts it in sys._MEIPASS/calendar_interaction/config
+        base_path = os.path.join(sys._MEIPASS, 'calendar_interaction')
+    else:
+        # In Development
+        base_path = os.path.dirname(__file__)
+
+    agents_config = os.path.join(base_path, 'config/agents.yaml')
+    tasks_config  = os.path.join(base_path, 'config/tasks.yaml')
 
     # ---------- AGENTS ----------
 
@@ -39,8 +51,8 @@ class CalendarInteractionCrew():
         """Executes SQL on the SQLite calendar DB via the sqlite_tool."""
         return Agent(
             config=self.agents_config['sql_executor_agent'],
-        tools=[sqlite_tool],   # <-- explicitly attach the tool object
-        verbose=True,
+            tools=[sqlite_tool],   # <-- explicitly attach the tool object
+            verbose=True,
         )
 
     @agent

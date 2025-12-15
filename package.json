@@ -1,12 +1,39 @@
 {
+    "name": "calendar-llm",
+    "version": "1.0.0",
+    "description": "A calendar application powered by LLMs",
+    "author": "Anush Somasundaram",
+    "main": "electron/main.js",
     "scripts": {
         "dev": "vite",
-        "electron": "electron ./electron/main.js"
+        "electron": "electron ./electron/main.js",
+        "build:frontend": "cd frontend && npm install && npm run build",
+        "build": "npm run build:frontend && electron-builder",
+        "postinstall": "electron-builder install-app-deps"
     },
     "dependencies": {
         "better-sqlite3": "^12.5.0"
     },
     "devDependencies": {
+        "electron": "^33.2.1",
+        "electron-builder": "^26.0.12",
         "electron-rebuild": "^3.2.9"
+    },
+    "build": {
+        "appId": "com.calendar.llm",
+        "mac": {
+            "category": "public.app-category.productivity",
+            "target": "dmg",
+            "icon": "build/icon.png"
+        },
+        "directories": {
+            "output": "dist"
+        },
+        "extraResources": [
+            {
+                "from": "backend/dist/crewai_runner",
+                "to": "backend"
+            }
+        ]
     }
 }

@@ -220,6 +220,7 @@ export default function LlmChatBox({ onSend }) {
     const [isOpen, setIsOpen] = useState(false);
     const [input, setInput] = useState("");
     const [messages, setMessages] = useState([]);
+    const [isLoading, setIsLoading] = useState(false);
 
     const handleToggle = () => setIsOpen((prev) => !prev);
 
@@ -229,15 +230,14 @@ export default function LlmChatBox({ onSend }) {
         if (!trimmed) return;
 
         const userMessage = { role: "user", content: trimmed };
-        // 🔹 Add user message once
         setMessages((prev) => [...prev, userMessage]);
         setInput("");
+        setIsLoading(true);
 
         if (onSend) {
             try {
                 const reply = await onSend(trimmed);
                 if (reply) {
-                    // 🔹 Only add the assistant message now
                     setMessages((prev) => [
                         ...prev,
                         { role: "assistant", content: reply },
@@ -252,7 +252,11 @@ export default function LlmChatBox({ onSend }) {
                         content: "Sorry, something went wrong talking to the LLM.",
                     },
                 ]);
+            } finally {
+                setIsLoading(false);
             }
+        } else {
+            setIsLoading(false);
         }
     };
 
@@ -377,6 +381,25 @@ export default function LlmChatBox({ onSend }) {
                                 </div>
                             </div>
                         ))}
+
+                        {/* Loading Indicator */}
+                        {isLoading && (
+                            <div style={{ textAlign: "left", marginBottom: "6px" }}>
+                                <div
+                                    style={{
+                                        display: "inline-block",
+                                        padding: "6px 8px",
+                                        borderRadius: "12px",
+                                        background: "#e5e7eb",
+                                        color: "#374151",
+                                        fontSize: "12px",
+                                        fontStyle: "italic"
+                                    }}
+                                >
+                                    Typing...
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Input */}

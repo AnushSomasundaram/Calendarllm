@@ -1,0 +1,127 @@
+interpret_user_query:
+  description: >
+    Given the user's message:
+
+      "{user_query}"
+
+    Context:
+      - Current Date: {current_date}
+      - Current Time: {current_time}
+      - Current Year: {current_year}
+
+    1. Determine the user's intent regarding the calendar
+       (e.g., create_event, update_event, delete_event, list_events, small_talk).
+    2. Extract all useful structured fields:
+       - action (create / update / delete / query)
+       - title or activity
+       - date or date range
+       - time or time range
+       - duration if mentioned
+       - whether it should be all-day or timed if clear
+    3. Do NOT generate SQL. Your job is only to build a clean,
+       structured intent object.
+  expected_output: >
+    A concise JSON object with at least:
+      - intent: one of ["create_event", "update_event", "delete_event",
+                        "list_events", "chit_chat"]
+      - fields: key details you extracted (title, date, time, duration,
+                all_day flag if obvious, etc.)
+      - notes: short natural-language explanation of what you decided
+  agent: nl_agent
+  async_execution: false
+
+plan_sql_for_intent:
+  description: >
+    Using the interpreted intent and extracted fields from the
+    interpret_user_query task, decide what SQL (if any) is needed.
+
+    The SQLite schema is:
+
+      events(
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        title       TEXT NOT NULL,
+        description TEXT,
+        start_time  TEXT NOT NULL, -- ISO 8601 string
+        end_time    TEXT NOT NULL, -- ISO 8601 string
+        all_day     INTEGER NOT NULL DEFAULT 0,
+        location    TEXT,
+        created_at  TEXT,
+        updated_at  TEXT
+      )
+
+    Behavior:
+    - If intent is "create_event", generate an INSERT into the `events` table
+      using at least title, start_time, end_time, and all_day (0/1).
+      Remember to escape single quotes (e.g. ' -> '').
+      You may set description or location to NULL if not provided.
+    - If "update_event", generate an UPDATE with a WHERE clause that targets
+      a specific id or a narrowly defined event (e.g., by title and time).
+      You may use SQLite relative time modifiers if requested, but MUST use 
+      strftime('%Y-%m-%dT%H:%M:%S', col, 'mod') to ensure ISO format.
+      Use LIKE for title matching to avoid case-sensitivity issues (e.g., title LIKE 'meeting%').
+    - If "delete_event", generate a DELETE with a safe WHERE clause targeting
+      a specific event. Avoid deleting everything.
+    - If "list_events", generate a SELECT that returns relevant events,
+      optionally filtered by date range.
+    - If intent is "chit_chat", set sql to null and do NOT plan any DB action.
+
+  expected_output: >
+    A concise JSON object with:
+      - intent: copied from the interpreter
+      - fields: copied/augmented from the interpreter
+      - sql: a single SQL string OR null if no DB action is needed
+      - notes: brief explanation of the planned database operation
+  agent: sql_generator_agent
+  async_execution: false
+  context:
+    - interpret_user_query
+
+execute_sql:
+  description: >
+    Take the SQL string proposed by the sql_generator_agent and execute it
+    against the SQLite calendar database using the sqlite_tool.
+
+    - If sql is null or the intent is "chit_chat", do nothing and
+      return an empty result.
+    - If it is a SELECT, return all matching rows from the events table.
+    - If it is INSERT/UPDATE/DELETE, execute it and return a summary
+      including rows_affected and any new ids if available (if you can infer them).
+  expected_output: >
+    A JSON-like structure describing:
+      - success: true/false
+      - sql: the SQL that was run (or null)
+      - rows: list of rows for SELECT queries
+      - rows_affected: integer for write queries
+      - error: error message if something went wrong
+  agent: sql_executor_agent
+  async_execution: false
+  context:
+    - plan_sql_for_intent
+
+respond_to_user:
+  description: >
+    Using:
+      - the original user query "{user_query}",
+      - the interpreted intent and fields,
+      - and the SQL execution results,
+
+    generate a final response to the user.
+ 
+    Behavior:
+    - If intent is "chit_chat", ignore SQL and just reply naturally.
+    - If a calendar change was made (create/update/delete), confirm
+      what was done in plain English (mention title and time range).
+    - If events were listed, summarize them in a human-friendly way,
+      including titles and start_time/end_time.
+    - If there was an error, apologize briefly and explain in simple terms.
+    - Never show raw SQL. Never show internal JSON. Speak like a human
+      assistant who is managing the user's calendar.
+  expected_output: >
+    A short, friendly natural-language response to the user that
+    explains what happened and, if helpful, suggests a next step.
+  agent: responder_agent
+  async_execution: false
+  context:
+    - interpret_user_query
+    - plan_sql_for_intent
+    - execute_sql
